@@ -1,4 +1,4 @@
-import asyncio, os, re, secrets
+import os, re, secrets
 import discord
 from discord import app_commands
 from mcrcon import MCRcon
@@ -46,12 +46,20 @@ async def register(interaction: discord.Interaction, mc_name: str):
             "Names must be 3-16 characters: letters, digits, or underscore.", ephemeral=True)
 
     password = secrets.token_urlsafe(12)
-    response = await asyncio.to_thread(rcon, f"authme register {mc_name} {password}")
+
+    try:
+        # Called directly (no to_thread) so mcrcon runs on the main thread
+        response = rcon(f"authme register {mc_name} {password}")
+    except Exception as e:
+        print("RCON error:", repr(e))
+        return await interaction.followup.send(
+            "I couldn't reach the Minecraft server. Ask moderators for help.", ephemeral=True)
+
     print("AuthMe replied:", response)  # check this once to confirm the success text
 
     if "success" not in response.lower():
         return await interaction.followup.send(
-            "I was unable to register your account. Ask the moderators for help.", ephemeral=True)
+            "I was unable to register your account. Ask moderators for help.", ephemeral=True)
 
     try:
         await interaction.user.send(
@@ -59,7 +67,10 @@ async def register(interaction: discord.Interaction, mc_name: str):
             f"Join with the name `{mc_name}`, run `/login {password}`, "
             f"then change it with `/changepassword {password} <new password>`.")
     except discord.Forbidden:
-        await asyncio.to_thread(rcon, f"authme unregister {mc_name}")  # undo so they can retry
+        try:
+            rcon(f"authme unregister {mc_name}")  # undo so they can retry
+        except Exception as e:
+            print("Rollback failed:", repr(e))
         return await interaction.followup.send(
             "I couldn't DM you. Enable DMs from server members and run `/register` again.",
             ephemeral=True)
@@ -67,6 +78,3 @@ async def register(interaction: discord.Interaction, mc_name: str):
     await interaction.followup.send(
         "Your account was registered. Check your DMs for the temporary password, and "
         "change it with `/changepassword` once you log in.", ephemeral=True)
-
-
-bot.run(TOKEN)
